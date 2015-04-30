@@ -21,6 +21,7 @@ import org.apache.ignite.*;
 import org.apache.ignite.events.*;
 import org.apache.ignite.internal.*;
 import org.apache.ignite.internal.managers.*;
+import org.apache.ignite.internal.processors.cache.*;
 import org.apache.ignite.internal.util.*;
 import org.apache.ignite.internal.util.lang.*;
 import org.apache.ignite.internal.util.typedef.internal.*;
@@ -138,20 +139,28 @@ public class GridSwapSpaceManager extends GridManagerAdapter<SwapSpaceSpi> {
      * Reads value from swap.
      *
      * @param spaceName Space name.
+     * @param part Partition.
      * @param key Key.
-     * @param ldr Class loader (optional).
+     * @param cctx Cache context.
      * @return Value.
      * @throws IgniteCheckedException If failed.
      */
-    @Nullable public byte[] read(@Nullable String spaceName, SwapKey key, @Nullable ClassLoader ldr)
+    @Nullable public byte[] read(@Nullable String spaceName, int part, KeyCacheObject key, GridCacheContext cctx)
         throws IgniteCheckedException {
         assert key != null;
 
         try {
-            return getSpi().read(spaceName, key, context(ldr));
+            byte[] bytes = getSpi().read(spaceName, new SwapKey(key.value(cctx.cacheObjectContext(), false), part,
+                key.valueBytes(cctx.cacheObjectContext())), context(cctx.deploy().globalLoader()));
+
+            if (cctx.config().isStatisticsEnabled())
+                cctx.cache().metrics0().onSwapRead(bytes != null);
+
+            return bytes;
         }
         catch (IgniteSpiException e) {
-            throw new IgniteCheckedException("Failed to read from swap space [space=" + spaceName + ", key=" + key + ']', e);
+            throw new IgniteCheckedException("Failed to read from swap space [space=" + spaceName +
+                ", key=" + key + ']', e);
         }
     }
 
@@ -159,35 +168,43 @@ public class GridSwapSpaceManager extends GridManagerAdapter<SwapSpaceSpi> {
      * Reads value from swap.
      *
      * @param spaceName Space name.
-     * @param key Swap key.
-     * @param ldr Class loader (optional).
+     * @param part Partition.
+     * @param key Key.
+     * @param cctx Cache context.
      * @return Value.
      * @throws IgniteCheckedException If failed.
      */
     @SuppressWarnings({"unchecked"})
-    @Nullable public <T> T readValue(@Nullable String spaceName, SwapKey key, @Nullable ClassLoader ldr)
+    @Nullable public <T> T readValue(@Nullable String spaceName, int part, KeyCacheObject key, GridCacheContext cctx)
         throws IgniteCheckedException {
         assert key != null;
 
-        return unmarshal(read(spaceName, key, ldr), ldr);
+        return unmarshal(read(spaceName, part, key, cctx), cctx.deploy().globalLoader());
     }
 
     /**
      * Writes value to swap.
      *
      * @param spaceName Space name.
+     * @param part Partition.
      * @param key Key.
      * @param val Value.
-     * @param ldr Class loader (optional).
+     * @param cctx Cache context.
      * @throws IgniteCheckedException If failed.
      */
-    public void write(@Nullable String spaceName, SwapKey key, byte[] val, @Nullable ClassLoader ldr)
+    public void write(@Nullable String spaceName, int part, KeyCacheObject key, byte[] val, GridCacheContext cctx)
         throws IgniteCheckedException {
         assert key != null;
         assert val != null;
 
         try {
-            getSpi().store(spaceName, key, val, context(ldr));
+            SwapKey swapKey = new SwapKey(key.value(cctx.cacheObjectContext(), false), part,
+                key.valueBytes(cctx.cacheObjectContext()));
+
+            getSpi().store(spaceName, swapKey, val, context(cctx.deploy().globalLoader()));
+
+            if (cctx.config().isStatisticsEnabled())
+                cctx.cache().metrics0().onSwapWrite();
         }
         catch (IgniteSpiException e) {
             throw new IgniteCheckedException("Failed to write to swap space [space=" + spaceName + ", key=" + key +
@@ -199,51 +216,81 @@ public class GridSwapSpaceManager extends GridManagerAdapter<SwapSpaceSpi> {
      * Writes batch to swap.
      *
      * @param spaceName Space name.
-     * @param batch Swapped entries.
-     * @param ldr Class loader (optional).
+     * @param swapped Swapped entries.
+     * @param cctx Cache context.
      * @throws IgniteCheckedException If failed.
      */
-    public <K, V> void writeAll(String spaceName, Map<SwapKey, byte[]> batch,
-        @Nullable ClassLoader ldr) throws IgniteCheckedException {
-        getSpi().storeAll(spaceName, batch, context(ldr));
+    public void writeAll(String spaceName, Iterable<GridCacheBatchSwapEntry> swapped, GridCacheContext cctx)
+        throws IgniteCheckedException {
+        Map<SwapKey, byte[]> batch = new LinkedHashMap<>();
+
+        int cnt = 0;
+
+        for (GridCacheBatchSwapEntry entry : swapped) {
+            SwapKey swapKey = new SwapKey(entry.key().value(cctx.cacheObjectContext(), false),
+                entry.partition(),
+                entry.key().valueBytes(cctx.cacheObjectContext()));
+
+            batch.put(swapKey, entry.marshal());
+
+            cnt++;
+        }
+
+        getSpi().storeAll(spaceName, batch, context(cctx.deploy().globalLoader()));
+
+        if (cctx.config().isStatisticsEnabled())
+            cctx.cache().metrics0().onSwapWrite(cnt);
     }
 
     /**
      * Writes value to swap.
      *
      * @param spaceName Space name.
+     * @param part Partition.
      * @param key Key.
      * @param val Value.
-     * @param ldr Class loader (optional).
-     * @throws IgniteCheckedException If failed.
-     */
-    public void write(@Nullable String spaceName, Object key, @Nullable Object val, @Nullable ClassLoader ldr)
-        throws IgniteCheckedException {
+     * @param cctx Cache context.
+     * */
+    public void write(@Nullable String spaceName, int part, KeyCacheObject key, @Nullable Object val,
+        GridCacheContext cctx) throws IgniteCheckedException {
         assert key != null;
 
-        write(spaceName, new SwapKey(key), marshal(val), ldr);
+        write(spaceName, part, key, marshal(val), cctx);
     }
 
     /**
      * Removes value from swap.
      *
      * @param spaceName Space name.
+     * @param part Partition.
      * @param key Key.
+     * @param cctx Cache context.
      * @param c Optional closure that takes removed value and executes after actual
      *      removing. If there was no value in storage the closure is executed given
      *      {@code null} value as parameter.
-     * @param ldr Class loader (optional).
      * @throws IgniteCheckedException If failed.
      */
-    public void remove(@Nullable String spaceName, SwapKey key, @Nullable IgniteInClosure<byte[]> c,
-        @Nullable ClassLoader ldr) throws IgniteCheckedException {
+    public void remove(@Nullable String spaceName, int part, KeyCacheObject key,
+        final GridCacheContext cctx, @Nullable final IgniteInClosure<byte[]> c) throws IgniteCheckedException {
         assert key != null;
 
         try {
-            getSpi().remove(spaceName, key, c, context(ldr));
+            SwapKey swapKey = new SwapKey(key.value(cctx.cacheObjectContext(), false), part,
+                key.valueBytes(cctx.cacheObjectContext()));
+
+            getSpi().remove(spaceName, swapKey, new IgniteInClosure<byte[]>() {
+                @Override public void apply(byte[] bytes) {
+                    if (c != null)
+                        c.apply(bytes);
+
+                    if (bytes != null && cctx.config().isStatisticsEnabled())
+                        cctx.cache().metrics0().onSwapRemove();
+                }
+            }, context(cctx.deploy().globalLoader()));
         }
         catch (IgniteSpiException e) {
-            throw new IgniteCheckedException("Failed to remove from swap space [space=" + spaceName + ", key=" + key + ']', e);
+            throw new IgniteCheckedException("Failed to remove from swap space [space=" + spaceName +
+                ", key=" + key + ']', e);
         }
     }
 
@@ -251,42 +298,37 @@ public class GridSwapSpaceManager extends GridManagerAdapter<SwapSpaceSpi> {
      * Removes value from swap.
      *
      * @param spaceName Space name.
-     * @param keys Collection of keys.
+     * @param keys Keys.
+     * @param cctx Cache context.
      * @param c Optional closure that takes removed value and executes after actual
      *      removing. If there was no value in storage the closure is executed given
      *      {@code null} value as parameter.
-     * @param ldr Class loader (optional).
      * @throws IgniteCheckedException If failed.
      */
-    public void removeAll(@Nullable String spaceName, Collection<SwapKey> keys,
-        IgniteBiInClosure<SwapKey, byte[]> c, @Nullable ClassLoader ldr) throws IgniteCheckedException {
+    public void removeAll(@Nullable String spaceName, Collection<KeyCacheObject> keys, GridCacheContext cctx,
+        IgniteBiInClosure<SwapKey, byte[]> c) throws IgniteCheckedException {
         assert keys != null;
 
+        Collection<SwapKey> swapKeys = new ArrayList<>(keys.size());
+
+        for (KeyCacheObject key : keys) {
+            SwapKey swapKey = new SwapKey(key.value(cctx.cacheObjectContext(), false),
+                cctx.affinity().partition(key),
+                key.valueBytes(cctx.cacheObjectContext()));
+
+            swapKeys.add(swapKey);
+        }
+
         try {
-            getSpi().removeAll(spaceName, keys, c, context(ldr));
+            getSpi().removeAll(spaceName, swapKeys, c, context(cctx.deploy().globalLoader()));
+
+            if (cctx.config().isStatisticsEnabled())
+                cctx.cache().metrics0().onSwapRemove();
         }
         catch (IgniteSpiException e) {
             throw new IgniteCheckedException("Failed to remove from swap space [space=" + spaceName + ", " +
                 "keysCnt=" + keys.size() + ']', e);
         }
-    }
-
-    /**
-     * Removes value from swap.
-     *
-     * @param spaceName Space name.
-     * @param key Key.
-     * @param c Optional closure that takes removed value and executes after actual
-     *      removing. If there was no value in storage the closure is executed given
-     *      {@code null} value as parameter.
-     * @param ldr Class loader (optional).
-     * @throws IgniteCheckedException If failed.
-     */
-    public void remove(@Nullable String spaceName, Object key, @Nullable IgniteInClosure<byte[]> c,
-        @Nullable ClassLoader ldr) throws IgniteCheckedException {
-        assert key != null;
-
-        remove(spaceName, new SwapKey(key), c, ldr);
     }
 
     /**
@@ -356,7 +398,7 @@ public class GridSwapSpaceManager extends GridManagerAdapter<SwapSpaceSpi> {
      *
      * @param spaceName Space name.
      * @return Iterator over space entries or {@code null} if space is unknown.
-     * @throws org.apache.ignite.spi.IgniteSpiException If failed.
+     * @throws IgniteSpiException If failed.
      */
     @Nullable public GridCloseableIterator<Map.Entry<byte[], byte[]>> rawIterator(@Nullable String spaceName)
         throws IgniteCheckedException {
@@ -397,7 +439,7 @@ public class GridSwapSpaceManager extends GridManagerAdapter<SwapSpaceSpi> {
      * @param spaceName Space name.
      * @param ldr Class loader.
      * @return Iterator over space entries or {@code null} if space is unknown.
-     * @throws org.apache.ignite.spi.IgniteSpiException If failed.
+     * @throws IgniteSpiException If failed.
      */
     @Nullable public <K> GridCloseableIterator<K> keysIterator(@Nullable String spaceName,
         @Nullable ClassLoader ldr) throws IgniteCheckedException {
@@ -417,7 +459,6 @@ public class GridSwapSpaceManager extends GridManagerAdapter<SwapSpaceSpi> {
      * @return Unmarshalled value.
      * @throws IgniteCheckedException If failed.
      */
-    @SuppressWarnings({"unchecked"})
     private <T> T unmarshal(byte[] swapBytes, @Nullable ClassLoader ldr) throws IgniteCheckedException {
         if (swapBytes == null)
             return null;

@@ -121,6 +121,9 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
                         warnFirstEvict();
 
                     writeToSwap(part, cctx.toCacheKeyObject(kb), vb);
+
+                    if (cctx.config().isStatisticsEnabled())
+                        cctx.cache().metrics0().onOffHeapEvict();
                 }
                 catch (IgniteCheckedException e) {
                     log.error("Failed to unmarshal off-heap entry [part=" + part + ", hash=" + hash + ']', e);
@@ -395,8 +398,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
      * @return Reconstituted swap entry or {@code null} if entry is obsolete.
      * @throws IgniteCheckedException If failed.
      */
-    @Nullable private <X extends GridCacheSwapEntry> X swapEntry(X e) throws IgniteCheckedException
-    {
+    @Nullable private <X extends GridCacheSwapEntry> X swapEntry(X e) throws IgniteCheckedException {
         assert e != null;
 
         checkIteratorQueue();
@@ -425,16 +427,13 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
         int part = cctx.affinity().partition(key);
 
         // First check off-heap store.
-        if (offheapEnabled)
-            if (offheap.contains(spaceName, part, key, key.valueBytes(cctx.cacheObjectContext())))
-                return true;
+        if (offheapEnabled && offheap.contains(spaceName, part, key, cctx))
+            return true;
 
         if (swapEnabled) {
             assert key != null;
 
-            byte[] valBytes = swapMgr.read(spaceName,
-                new SwapKey(key.value(cctx.cacheObjectContext(), false), part, key.valueBytes(cctx.cacheObjectContext())),
-                cctx.deploy().globalLoader());
+            byte[] valBytes = swapMgr.read(spaceName, part, key, cctx);
 
             return valBytes != null;
         }
@@ -444,7 +443,6 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
 
     /**
      * @param key Key to read.
-     * @param keyBytes Key bytes.
      * @param part Key partition.
      * @param entryLocked {@code True} if cache entry is locked.
      * @param readOffheap Read offheap flag.
@@ -454,7 +452,6 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
      */
     @SuppressWarnings({"unchecked"})
     @Nullable private GridCacheSwapEntry read(KeyCacheObject key,
-        byte[] keyBytes,
         int part,
         boolean entryLocked,
         boolean readOffheap,
@@ -479,7 +476,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
 
             // First check off-heap store.
             if (readOffheap && offheapEnabled) {
-                byte[] bytes = offheap.get(spaceName, part, key, keyBytes);
+                byte[] bytes = offheap.get(spaceName, part, key, cctx);
 
                 if (bytes != null)
                     return swapEntry(unmarshalSwapEntry(bytes));
@@ -490,9 +487,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
 
             assert key != null;
 
-            byte[] bytes = swapMgr.read(spaceName,
-                new SwapKey(key.value(cctx.cacheObjectContext(), false), part, keyBytes),
-                cctx.deploy().globalLoader());
+            byte[] bytes = swapMgr.read(spaceName, part, key, cctx);
 
             if (bytes == null && lsnr != null)
                 return lsnr.entry;
@@ -522,7 +517,10 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
 
         // First try removing from offheap.
         if (offheapEnabled) {
-            byte[] entryBytes = offheap.remove(spaceName, part, key, key.valueBytes(cctx.cacheObjectContext()));
+            byte[] entryBytes = offheap.remove(spaceName, part, key, cctx);
+
+            if (cctx.config().isStatisticsEnabled())
+                cctx.cache().metrics0().onOffHeapRead(entryBytes != null);
 
             if (entryBytes != null) {
                 GridCacheSwapEntry entry = swapEntry(unmarshalSwapEntry(entryBytes));
@@ -567,8 +565,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
      * @return Value from swap or {@code null}.
      * @throws IgniteCheckedException If failed.
      */
-    @Nullable private GridCacheSwapEntry readAndRemoveSwap(final KeyCacheObject key,
-        final int part)
+    @Nullable private GridCacheSwapEntry readAndRemoveSwap(final KeyCacheObject key, final int part)
         throws IgniteCheckedException {
         if (!swapEnabled)
             return null;
@@ -576,12 +573,11 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
         final GridTuple<GridCacheSwapEntry> t = F.t1();
         final GridTuple<IgniteCheckedException> err = F.t1();
 
-        SwapKey swapKey = new SwapKey(key.value(cctx.cacheObjectContext(), false),
-            part,
-            key.valueBytes(cctx.cacheObjectContext()));
-
-        swapMgr.remove(spaceName, swapKey, new CI1<byte[]>() {
+        swapMgr.remove(spaceName, part, key, cctx, new CI1<byte[]>() {
             @Override public void apply(byte[] rmv) {
+                if (cctx.config().isStatisticsEnabled())
+                    cctx.cache().metrics0().onSwapRead(rmv != null);
+
                 if (rmv != null) {
                     try {
                         GridCacheSwapEntry entry = swapEntry(unmarshalSwapEntry(rmv));
@@ -624,7 +620,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
                     }
                 }
             }
-        }, cctx.deploy().globalLoader());
+        });
 
         if (err.get() != null)
             throw err.get();
@@ -649,12 +645,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
         if (!offheapEnabled && !swapEnabled)
             return null;
 
-        return read(entry.key(),
-            entry.key().valueBytes(cctx.cacheObjectContext()),
-            entry.partition(),
-            locked,
-            readOffheap,
-            readSwap);
+        return read(entry.key(), entry.partition(), locked, readOffheap, readSwap);
     }
 
     /**
@@ -670,8 +661,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
 
         int part = cctx.affinity().partition(key);
 
-        IgniteBiTuple<Long, Integer> ptr =
-            offheap.valuePointer(spaceName, part, key, key.valueBytes(cctx.cacheObjectContext()));
+        IgniteBiTuple<Long, Integer> ptr = offheap.valuePointer(spaceName, part, key, cctx);
 
         if (ptr != null) {
             assert ptr.get1() != null;
@@ -700,7 +690,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
 
         int part = cctx.affinity().partition(key);
 
-        return read(key, key.valueBytes(cctx.cacheObjectContext()), part, false, readOffheap, readSwap);
+        return read(key, part, false, readOffheap, readSwap);
     }
 
     /**
@@ -729,7 +719,8 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
 
         final GridCacheQueryManager qryMgr = cctx.queries();
 
-        Collection<SwapKey> unprocessedKeys = null;
+        Collection<KeyCacheObject> unprocessedKeys = null;
+
         final Collection<GridCacheBatchSwapEntry> res = new ArrayList<>(keys.size());
 
         // First try removing from offheap.
@@ -738,7 +729,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
                 int part = cctx.affinity().partition(key);
 
                 byte[] entryBytes =
-                    offheap.remove(spaceName, part, key, key.valueBytes(cctx.cacheObjectContext()));
+                    offheap.remove(spaceName, part, key, cctx);
 
                 if (entryBytes != null) {
                     GridCacheSwapEntry entry = swapEntry(unmarshalSwapEntry(entryBytes));
@@ -775,11 +766,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
                     if (unprocessedKeys == null)
                         unprocessedKeys = new ArrayList<>(keys.size());
 
-                    SwapKey swapKey = new SwapKey(key.value(cctx.cacheObjectContext(), false),
-                        cctx.affinity().partition(key),
-                        key.valueBytes(cctx.cacheObjectContext()));
-
-                    unprocessedKeys.add(swapKey);
+                    unprocessedKeys.add(key);
                 }
             }
 
@@ -789,13 +776,8 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
         else {
             unprocessedKeys = new ArrayList<>(keys.size());
 
-            for (KeyCacheObject key : keys) {
-                SwapKey swapKey = new SwapKey(key.value(cctx.cacheObjectContext(), false),
-                    cctx.affinity().partition(key),
-                    key.valueBytes(cctx.cacheObjectContext()));
-
-                unprocessedKeys.add(swapKey);
-            }
+            for (KeyCacheObject key : keys)
+                unprocessedKeys.add(key);
         }
 
         assert swapEnabled;
@@ -804,9 +786,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
         // Swap is enabled.
         final GridTuple<IgniteCheckedException> err = F.t1();
 
-        swapMgr.removeAll(spaceName,
-            unprocessedKeys,
-            new IgniteBiInClosure<SwapKey, byte[]>() {
+        swapMgr.removeAll(spaceName, unprocessedKeys, cctx, new IgniteBiInClosure<SwapKey, byte[]>() {
                 @Override public void apply(SwapKey swapKey, byte[] rmv) {
                     if (rmv != null) {
                         try {
@@ -859,8 +839,8 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
                         }
                     }
                 }
-            },
-            cctx.deploy().globalLoader());
+            }
+        );
 
         if (err.get() != null)
             throw err.get();
@@ -880,7 +860,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
 
         int part = cctx.affinity().partition(key);
 
-        return offheap.removex(spaceName, part, key, key.valueBytes(cctx.cacheObjectContext()));
+        return offheap.removex(spaceName, part, key, cctx);
     }
 
     /**
@@ -904,7 +884,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
 
         int part = cctx.affinity().partition(key);
 
-        offheap.enableEviction(spaceName, part, key, key.valueBytes(cctx.cacheObjectContext()));
+        offheap.enableEviction(spaceName, part, key, cctx);
     }
 
     /**
@@ -942,10 +922,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
 
         // First try offheap.
         if (offheapEnabled) {
-            byte[] val = offheap.remove(spaceName,
-                part,
-                key.value(cctx.cacheObjectContext(), false),
-                key.valueBytes(cctx.cacheObjectContext()));
+            byte[] val = offheap.remove(spaceName, part, key, cctx);
 
             if (val != null) {
                 if (c != null)
@@ -955,16 +932,8 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
             }
         }
 
-        if (swapEnabled) {
-            SwapKey swapKey = new SwapKey(key.value(cctx.cacheObjectContext(), false),
-                part,
-                key.valueBytes(cctx.cacheObjectContext()));
-
-            swapMgr.remove(spaceName,
-                swapKey,
-                c,
-                cctx.deploy().globalLoader());
-        }
+        if (swapEnabled)
+            swapMgr.remove(spaceName, part, key, cctx, c);
     }
 
     /**
@@ -1004,13 +973,8 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
             keyClsLdrId,
             valClsLdrId);
 
-        if (offheapEnabled) {
-            offheap.put(spaceName, part, key, key.valueBytes(cctx.cacheObjectContext()), entry.marshal());
-
-            if (cctx.events().isRecordable(EVT_CACHE_OBJECT_TO_OFFHEAP))
-                cctx.events().addEvent(part, key, cctx.nodeId(), (IgniteUuid)null, null,
-                    EVT_CACHE_OBJECT_TO_OFFHEAP, null, false, null, true, null, null, null);
-        }
+        if (offheapEnabled)
+            offheap.put(spaceName, part, key, entry.marshal(), cctx);
         else if (swapEnabled)
             writeToSwap(part, key, entry.marshal());
 
@@ -1035,32 +999,14 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
 
         if (offheapEnabled) {
             for (GridCacheBatchSwapEntry swapEntry : swapped) {
-                offheap.put(spaceName,
-                    swapEntry.partition(),
-                    swapEntry.key(),
-                    swapEntry.key().valueBytes(cctx.cacheObjectContext()),
-                    swapEntry.marshal());
-
-                if (cctx.events().isRecordable(EVT_CACHE_OBJECT_TO_OFFHEAP))
-                    cctx.events().addEvent(swapEntry.partition(), swapEntry.key(), cctx.nodeId(),
-                        (IgniteUuid)null, null, EVT_CACHE_OBJECT_TO_OFFHEAP, null, false, null, true, null, null, null);
+                offheap.put(spaceName, swapEntry.partition(), swapEntry.key(), swapEntry.marshal(), cctx);
 
                 if (qryMgr != null)
                     qryMgr.onSwap(swapEntry.key());
             }
         }
         else {
-            Map<SwapKey, byte[]> batch = new LinkedHashMap<>();
-
-            for (GridCacheBatchSwapEntry entry : swapped) {
-                SwapKey swapKey = new SwapKey(entry.key().value(cctx.cacheObjectContext(), false),
-                    entry.partition(),
-                    entry.key().valueBytes(cctx.cacheObjectContext()));
-
-                batch.put(swapKey, entry.marshal());
-            }
-
-            swapMgr.writeAll(spaceName, batch, cctx.deploy().globalLoader());
+            swapMgr.writeAll(spaceName, swapped, cctx);
 
             if (cctx.events().isRecordable(EVT_CACHE_OBJECT_SWAPPED)) {
                 for (GridCacheBatchSwapEntry batchSwapEntry : swapped) {
@@ -1082,17 +1028,10 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
      * @param entry Entry bytes.
      * @throws IgniteCheckedException If failed.
      */
-    private void writeToSwap(int part,
-        KeyCacheObject key,
-        byte[] entry)
-        throws IgniteCheckedException
-    {
+    private void writeToSwap(int part, KeyCacheObject key, byte[] entry) throws IgniteCheckedException {
         checkIteratorQueue();
 
-        swapMgr.write(spaceName,
-            new SwapKey(key.value(cctx.cacheObjectContext(), false), part, key.valueBytes(cctx.cacheObjectContext())),
-            entry,
-            cctx.deploy().globalLoader());
+        swapMgr.write(spaceName, part, key, entry, cctx);
 
         if (cctx.events().isRecordable(EVT_CACHE_OBJECT_SWAPPED))
             cctx.events().addEvent(part, key, cctx.nodeId(), (IgniteUuid) null, null,
@@ -1274,7 +1213,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
 
                     int part = cctx.affinity().partition(key);
 
-                    offheap.removex(spaceName, part, key, key.valueBytes(cctx.cacheObjectContext()));
+                    offheap.removex(spaceName, part, key, cctx);
                 }
                 else
                     it.removeX();
@@ -1432,6 +1371,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
                 return it.hasNext();
             }
 
+            @SuppressWarnings("unchecked")
             @Override protected void onRemove() throws IgniteCheckedException {
                 if (cur == null)
                     throw new IllegalStateException("Method next() has not yet been called, or the remove() method " +
@@ -1616,7 +1556,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
 
                     int part = cctx.affinity().partition(key);
 
-                    offheap.removex(spaceName, part, key, key.valueBytes(cctx.cacheObjectContext()));
+                    offheap.removex(spaceName, part, key, cctx);
                 }
 
                 @Override protected void onClose() throws IgniteCheckedException {
@@ -1646,7 +1586,7 @@ public class GridCacheSwapManager extends GridCacheManagerAdapter {
 
                 int part = cctx.affinity().partition(key);
 
-                offheap.removex(spaceName, part, key, key.valueBytes(cctx.cacheObjectContext()));
+                offheap.removex(spaceName, part, key, cctx);
             }
         };
     }

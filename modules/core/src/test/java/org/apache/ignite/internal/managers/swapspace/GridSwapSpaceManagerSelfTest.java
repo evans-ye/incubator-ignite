@@ -21,10 +21,11 @@ import org.apache.ignite.*;
 import org.apache.ignite.configuration.*;
 import org.apache.ignite.events.*;
 import org.apache.ignite.internal.*;
+import org.apache.ignite.internal.processors.cache.*;
 import org.apache.ignite.internal.util.lang.*;
 import org.apache.ignite.internal.util.typedef.*;
 import org.apache.ignite.lang.*;
-import org.apache.ignite.spi.swapspace.*;
+import org.apache.ignite.marshaller.*;
 import org.apache.ignite.spi.swapspace.file.*;
 import org.apache.ignite.testframework.junits.common.*;
 
@@ -40,7 +41,10 @@ import static org.apache.ignite.events.EventType.*;
 @GridCommonTest(group = "Kernal Self")
 public class GridSwapSpaceManagerSelfTest extends GridCommonAbstractTest {
     /** */
-    private static final String spaceName = "swapspace_mgr";
+    private static final String SPACE_NAME = "swapspace_mgr";
+
+    /** Partition. */
+    private static final int PART = Integer.MAX_VALUE;
 
     /**
      *
@@ -64,7 +68,7 @@ public class GridSwapSpaceManagerSelfTest extends GridCommonAbstractTest {
      * @param ignite Grid instance.
      * @return Swap space manager.
      */
-    private GridSwapSpaceManager getSwapSpaceManager(Ignite ignite) {
+    private static GridSwapSpaceManager getSwapSpaceManager(Ignite ignite) {
         assert ignite != null;
 
         return ((IgniteKernal) ignite).context().swap();
@@ -89,7 +93,7 @@ public class GridSwapSpaceManagerSelfTest extends GridCommonAbstractTest {
 
                 SwapSpaceEvent e = (SwapSpaceEvent) evt;
 
-                assert spaceName.equals(e.space());
+                assert SPACE_NAME.equals(e.space());
                 assert ignite.cluster().localNode().id().equals(e.node().id());
 
                 switch (evt.type()) {
@@ -123,41 +127,55 @@ public class GridSwapSpaceManagerSelfTest extends GridCommonAbstractTest {
 
         GridSwapSpaceManager mgr = getSwapSpaceManager(ignite);
 
+        ignite.getOrCreateCache((String)null);
+
+        GridKernalContext ctx = ((IgniteKernal)ignite).context();
+
+        GridCacheContext cctx = ((IgniteCacheProxy)ignite.cache(null)).context();
+
+        Marshaller marsh = ctx.config().getMarshaller();
+
         assert mgr != null;
 
         // Empty data space.
-        assertEquals(0, mgr.swapSize(spaceName));
+        assertEquals(0, mgr.swapSize(SPACE_NAME));
 
-        SwapKey key = new SwapKey("key1");
+        String key1 = "key1";
+
+        String key2 = "key2";
+
+        KeyCacheObject ckey1 = new KeyCacheObjectImpl(key1, marsh.marshal(key1));
+
+        KeyCacheObject ckey2 = new KeyCacheObjectImpl(key2, marsh.marshal(key2));
 
         String val = "value";
 
-        mgr.write(spaceName, key, val.getBytes(), null);
+        mgr.write(SPACE_NAME, PART, ckey1, marsh.marshal(val), cctx);
 
-        mgr.write(spaceName, new SwapKey("key2"), val.getBytes(), null);
+        mgr.write(SPACE_NAME, PART, ckey2, marsh.marshal(val), cctx);
 
         assert storeCnt.await(10, SECONDS);
 
-        byte[] arr = mgr.read(spaceName, key, null);
+        byte[] arr = mgr.read(SPACE_NAME, PART, ckey1, cctx);
 
         assert arr != null;
 
-        assert val.equals(new String(arr));
+        assert val.equals(marsh.unmarshal(arr, cctx.deploy().globalLoader()));
 
         final GridTuple<Boolean> b = F.t(false);
 
-        mgr.remove(spaceName, key, new CI1<byte[]>() {
+        mgr.remove(SPACE_NAME, PART, ckey1, cctx, new CI1<byte[]>() {
             @Override public void apply(byte[] rmv) {
                 b.set(rmv != null);
             }
-        }, null);
+        });
 
         assert b.get();
 
         assert rmvCnt.await(10, SECONDS);
         assert readCnt.await(10, SECONDS);
 
-        mgr.clear(spaceName);
+        mgr.clear(SPACE_NAME);
 
         assert clearCnt.await(10, SECONDS) : "Count: " + clearCnt.getCount();
     }
