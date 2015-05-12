@@ -302,6 +302,9 @@ public class IgniteEventsImpl extends AsyncSupportAdapter<IgniteEvents> implemen
      */
     private static class IgniteCompoundPredicate<T extends Event> implements IgnitePredicate<T>,
         GridLifecycleAwareEventFilter<T> {
+        /** */
+        private static final long serialVersionUID = 0L;
+
         /** Event types. */
         private final int[] types;
 
