@@ -17,24 +17,12 @@
 
 package org.apache.ignite.internal.managers.eventstorage;
 
-import org.apache.ignite.events.*;
-
-import java.util.*;
-
 /**
- * Listener for asynchronous local node grid events. You can subscribe for local node grid
- * event notifications via {@link GridEventStorageManager#addLocalEventListener(GridLocalEventListener, int...)}.
- * <p>
- * Use {@link GridEventStorageManager#addLocalEventListener(org.apache.ignite.lang.IgnitePredicate, int...)} to register
- * this listener with grid.
- * @see org.apache.ignite.IgniteEvents#localListen(org.apache.ignite.lang.IgnitePredicate, int...)
+ * Special version of listener for events with close callbacks.
  */
-public interface GridLocalEventListener extends EventListener {
+public interface GridLifecycleAwareLocalEventListener {
     /**
-     * Local event callback.
-     *
-     * @param evt local grid event.
+     * Closes the listener.
      */
-    public void onEvent(Event evt);
+    public void close();
 }
-

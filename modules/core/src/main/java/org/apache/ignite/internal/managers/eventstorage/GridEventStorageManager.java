@@ -653,6 +653,14 @@ public class GridEventStorageManager extends GridManagerAdapter<EventStorageSpi>
             }
         }
 
+        if (lsnr instanceof UserListenerWrapper)
+        {
+            UserListenerWrapper wrapper = (UserListenerWrapper)lsnr;
+
+            if (wrapper.listener() instanceof GridLifecycleAwareLocalEventListener)
+                ((GridLifecycleAwareLocalEventListener)wrapper.listener()).close();
+        }
+
         return found;
     }
 
