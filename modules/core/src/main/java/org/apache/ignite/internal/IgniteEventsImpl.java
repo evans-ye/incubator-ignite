@@ -24,6 +24,7 @@ import org.apache.ignite.internal.cluster.*;
 import org.apache.ignite.internal.util.typedef.*;
 import org.apache.ignite.internal.util.typedef.internal.*;
 import org.apache.ignite.lang.*;
+import org.apache.ignite.resources.*;
 import org.jetbrains.annotations.*;
 
 import java.io.*;
@@ -268,18 +269,7 @@ public class IgniteEventsImpl extends AsyncSupportAdapter<IgniteEvents> implemen
      */
     private static <T extends Event> IgnitePredicate<T> compoundPredicate(final IgnitePredicate<T> p,
         @Nullable final int... types) {
-
-        return F.isEmpty(types) ? p :
-            new IgnitePredicate<T>() {
-                @Override public boolean apply(T t) {
-                    for (int type : types) {
-                        if (type == t.type())
-                            return p.apply(t);
-                    }
-
-                    return false;
-                }
-            };
+        return F.isEmpty(types) ? p : new IgniteCompoundPredicate<>(p, types);
     }
 
     /** {@inheritDoc} */
@@ -305,5 +295,60 @@ public class IgniteEventsImpl extends AsyncSupportAdapter<IgniteEvents> implemen
      */
     protected Object readResolve() throws ObjectStreamException {
         return prj.events();
+    }
+
+    /**
+     * Compound predicate which adds type filtering
+     */
+    private static class IgniteCompoundPredicate<T extends Event> implements IgnitePredicate<T>,
+        GridLifecycleAwareEventFilter<T> {
+        /** Event types. */
+        private final int[] types;
+
+        /** Inner predicate. */
+        private final IgnitePredicate<T> p;
+
+        /** Grid. */
+        @IgniteInstanceResource
+        private transient Ignite ignite;
+
+        /**
+         * Constructor.
+         * @param p Predicate.
+         * @param types Event types.
+         */
+        public IgniteCompoundPredicate(IgnitePredicate<T> p, final int... types) {
+            this.types = types;
+            this.p = p;
+        }
+
+        /** {@inheritDoc} */
+        @Override public boolean apply(T t) {
+            for (int type : types) {
+                if (type == t.type())
+                    return p.apply(t);
+            }
+
+            return false;
+        }
+
+        /** {@inheritDoc} */
+        @Override public void initialize() {
+            try {
+                ((IgniteKernal)ignite).context().resource().injectGeneric(p);
+            }
+            catch (IgniteCheckedException e) {
+                throw new IgniteException("Failed to inject resources to event predicate: " + p, e);
+            }
+
+            if (p instanceof GridLifecycleAwareEventFilter)
+                ((GridLifecycleAwareEventFilter)p).initialize();
+        }
+
+        /** {@inheritDoc} */
+        @Override public void close() {
+            if (p instanceof GridLifecycleAwareEventFilter)
+                ((GridLifecycleAwareEventFilter)p).close();
+        }
     }
 }

@@ -763,7 +763,23 @@ public class GridEventStorageManager extends GridManagerAdapter<EventStorageSpi>
     public <T extends Event> Collection<T> localEvents(IgnitePredicate<T> p) {
         assert p != null;
 
-        return getSpi().localEvents(p);
+        try {
+            ctx.resource().injectGeneric(p);
+        }
+        catch (IgniteCheckedException e) {
+            throw new IgniteException("Failed to inject resources to event predicate: " + p, e);
+        }
+
+        if (p instanceof GridLifecycleAwareEventFilter)
+            ((GridLifecycleAwareEventFilter)p).initialize();
+
+        try {
+            return getSpi().localEvents(p);
+        }
+        finally {
+            if (p instanceof GridLifecycleAwareEventFilter)
+                ((GridLifecycleAwareEventFilter)p).close();
+        }
     }
 
     /**
