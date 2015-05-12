@@ -194,6 +194,9 @@ class GridEventConsumeHandler implements GridContinuousHandler {
 
         if (filter instanceof GridLifecycleAwareEventFilter)
             ((GridLifecycleAwareEventFilter)filter).close();
+
+        if (cb instanceof GridLifecycleAwareLocalEventListener)
+            ((GridLifecycleAwareLocalEventListener)cb).close();
     }
 
     /**
