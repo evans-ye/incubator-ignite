@@ -124,6 +124,9 @@ class GridEventConsumeHandler implements GridContinuousHandler {
         if (filter != null)
             ctx.resource().injectGeneric(filter);
 
+        if (filter instanceof GridLifecycleAwareEventFilter)
+            ((GridLifecycleAwareEventFilter)filter).initialize();
+
         final boolean loc = nodeId.equals(ctx.localNodeId());
 
         lsnr = new GridLocalEventListener() {
@@ -188,6 +191,9 @@ class GridEventConsumeHandler implements GridContinuousHandler {
 
         if (lsnr != null)
             ctx.event().removeLocalEventListener(lsnr, types);
+
+        if (filter instanceof GridLifecycleAwareEventFilter)
+            ((GridLifecycleAwareEventFilter)filter).close();
     }
 
     /**
