@@ -37,4 +37,3 @@ public interface GridLocalEventListener extends EventListener {
      */
     public void onEvent(Event evt);
 }
-
