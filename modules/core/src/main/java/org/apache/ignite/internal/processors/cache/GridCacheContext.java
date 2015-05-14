@@ -98,7 +98,7 @@ public class GridCacheContext<K, V> implements Externalizable {
     private IgniteLogger log;
 
     /** Cache configuration. */
-    private CacheConfiguration cacheCfg;
+    private volatile CacheConfiguration cacheCfg;
 
     /** Unsafe memory object for direct memory allocation. */
     private GridUnsafeMemory unsafeMemory;
@@ -116,10 +116,10 @@ public class GridCacheContext<K, V> implements Externalizable {
     private CacheContinuousQueryManager contQryMgr;
 
     /** Swap manager. */
-    private GridCacheSwapManager swapMgr;
+    private volatile GridCacheSwapManager swapMgr;
 
     /** Evictions manager. */
-    private GridCacheEvictionManager evictMgr;
+    private volatile GridCacheEvictionManager evictMgr;
 
     /** Data structures manager. */
     private CacheDataStructuresManager dataStructuresMgr;
@@ -149,7 +149,7 @@ public class GridCacheContext<K, V> implements Externalizable {
     private GridCacheGateway<K, V> gate;
 
     /** Grid cache. */
-    private GridCacheAdapter<K, V> cache;
+    private volatile GridCacheAdapter<K, V> cache;
 
     /** Cached local rich node. */
     private ClusterNode locNode;
