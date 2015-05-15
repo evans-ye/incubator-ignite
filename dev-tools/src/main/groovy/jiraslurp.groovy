@@ -154,14 +154,24 @@ def runAllTestBuilds = { jiraNum ->
     HttpURLConnection conn = (HttpURLConnection) url.openConnection();
     conn.setDoOutput(true);
     conn.setRequestMethod("POST");
-//    conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-    conn.setRequestProperty("Content-Type", "application/xml");
+    conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+//    conn.setRequestProperty("Content-Type", "application/xml");
     conn.setRequestProperty("Content-Length", String.valueOf(postData.length()));
 
     OutputStream os = conn.getOutputStream()
     os.write(postData.getBytes())
     os.flush()
     os.close()
+
+    // Read response
+    StringBuilder responseSB = new StringBuilder();
+    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+
+    String line;
+    while ( (line = br.readLine()) != null)
+      responseSB.append(line);
+
+    br.close();
   }
 }
 
