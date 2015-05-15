@@ -135,18 +135,35 @@ def runAllTestBuilds = { jiraNum ->
   def user = System.getenv('TASK_RUNNER_USER')
   def pwd = System.getenv('TASK_RUNNER_PWD')
 
-  ["Ignite_IgniteBasic",
-   "Ignite_IgniteCache"].each {
-    println "Triggering $it build for JIRA_NUM=$jiraNum"
+  String postData = "<build><buildType id='Ignite_IgniteBasic'/></build>";
 
-    def buildCommand =
-        "<build><buildType id='$it'/><properties><property name='env.JIRA_NUM' value='$jiraNum'/></properties></build>";
+  URL url = new URL("http://204.14.53.152:80/httpAuth/app/rest/buildQueue");
+  HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 
+  String encoded = new sun.misc.BASE64Encoder().encode("$user:$pwd".getBytes());
 
-    def runTcBuild = "curl -v http://$user:$pwd@10.30.0.229:80/httpAuth/app/rest/buildQueue -H \"Content-Type: application/xml\" -d \"${buildCommand}\""
+  conn.setRequestProperty("Authorization", "Basic "+encoded);
 
-    checkprocess runTcBuild.execute()
-  }
+  conn.setDoOutput(true);
+  conn.setRequestMethod("POST");
+  conn.setRequestProperty("Content-Type", "application/xml");
+  conn.setRequestProperty("Content-Length", String.valueOf(postData.length()));
+
+  OutputStream os = conn.getOutputStream();
+  os.write(postData.getBytes());
+  os.flush();
+  os.close();
+
+  conn.connect();
+
+  // Read response.
+  BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+
+  String line;
+  while ( (line = br.readLine()) != null)
+    System.out.println(line);
+
+  br.close();
 }
 
 args.each {
@@ -155,6 +172,10 @@ args.each {
   def parameters = it.split('=')
 
   if (parameters[0] == 'slurp') {
+    String psSt = "curl -v POST http://task_runner:amq+KF4Trn+J@204.14.53.152:80/httpAuth/app/rest/buildQueue -H \"Content-Type: application/xml\" -d \"<build><buildType id='Ignite_IgniteBasic'/></build>\""
+
+    checkprocess Runtime.getRuntime().exec(psSt);
+
     checkForAttachments()
 
     // For each ticket with new attachment, let's trigger remove build
