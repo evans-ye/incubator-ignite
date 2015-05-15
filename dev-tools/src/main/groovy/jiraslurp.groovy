@@ -133,8 +133,8 @@ def runAllTestBuilds = { jiraNum ->
   ["Ignite_IgniteBasic",
    "Ignite_IgniteCache"].each {
     println "Triggering $it build for JIRA_NUM=$jiraNum"
-    println System.getProperty('TASK_RUNNER_USER')
-    println System.getProperty('TASK_RUNNER_PVD')
+    println System.getenv('TASK_RUNNER_USER')
+    println System.getenv('TASK_RUNNER_PVD')
 
     def buildCommand =
         "<build>" +
