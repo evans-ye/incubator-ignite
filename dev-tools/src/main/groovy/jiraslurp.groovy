@@ -140,38 +140,12 @@ def runAllTestBuilds = { jiraNum ->
     println "Triggering $it build for JIRA_NUM=$jiraNum"
 
     def buildCommand =
-        "<build>" +
-            "<buildType id='$it'/>" +
-            "<properties>" +
-            "<property name='env.JIRA_NUM' value='$jiraNum'/>" +
-            "</properties>" +
-            "</build>";
+        "<build><buildType id='$it'/><properties><property name='env.JIRA_NUM' value='$jiraNum'/></properties></build>";
 
 
-    String postData = URLEncoder.encode(buildCommand, "UTF-8");
+    def runTcBuild = "curl -v http://$user:$pwd@10.30.0.229:80/httpAuth/app/rest/buildQueue -H \"Content-Type: application/xml\" -d \"${buildCommand}\""
 
-    URL url = new URL("http://$user:$pwd@10.30.0.229:80/httpAuth/app/rest/buildQueue");
-    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-    conn.setDoOutput(true);
-    conn.setRequestMethod("POST");
-    conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-//    conn.setRequestProperty("Content-Type", "application/xml");
-    conn.setRequestProperty("Content-Length", String.valueOf(postData.length()));
-
-    OutputStream os = conn.getOutputStream()
-    os.write(postData.getBytes())
-    os.flush()
-    os.close()
-
-    // Read response
-    StringBuilder responseSB = new StringBuilder();
-    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-
-    String line;
-    while ( (line = br.readLine()) != null)
-      responseSB.append(line);
-
-    br.close();
+    checkprocess runTcBuild.execute()
   }
 }
 
