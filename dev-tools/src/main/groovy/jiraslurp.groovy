@@ -130,20 +130,24 @@ def JIRA_xml = { jiranum ->
 }
 
 def runAllTestBuilds = { jiraNum ->
-  def buildCommand =
-      "<build>" +
-          "<buildType id='Ignite_IgniteBasic'/>" +
-          "<properties>" +
-          "<property name='env.JIRA_NUM' value='$jiraNum'/>" +
-          "</properties>" +
-          "</build>";
+  [Ignite_IgniteBasic, Ignite_IgniteCache].each {
+    println it
+
+    def buildCommand =
+        "<build>" +
+            "<buildType id='$it'/>" +
+            "<properties>" +
+            "<property name='env.JIRA_NUM' value='$jiraNum'/>" +
+            "</properties>" +
+            "</build>";
 
 
-  def runTcBuild = "curl -v http://%TASK_RUNNER_USER%:%TASK_RUNNER_PWD%@10.30.0.229:80/httpAuth/app/rest/buildQueue " +
-      "-H \"Content-Type: application/xml\" " +
-      "-d \"${buildCommand}\""
+    def runTcBuild = "curl -v http://%TASK_RUNNER_USER%:%TASK_RUNNER_PWD%@10.30.0.229:80/httpAuth/app/rest/buildQueue " +
+        "-H \"Content-Type: application/xml\" " +
+        "-d \"${buildCommand}\""
 
-  checkprocess runTcBuild.execute()
+    checkprocess runTcBuild.execute()
+  }
 }
 
 args.each {
