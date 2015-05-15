@@ -129,18 +129,21 @@ def JIRA_xml = { jiranum ->
   "https://issues.apache.org/jira/si/jira.issueviews:issue-xml/$jiranum/${jiranum}.xml"
 }
 
-def runAllBuilds = { jiraNum ->
+def runAllTestBuilds = { jiraNum ->
   def buildCommand =
       "<build>" +
           "<buildType id='Ignite_IgniteBasic'/>" +
           "<properties>" +
-          "<property name='env.JIRA_NUM' value='$k'/>" +
+          "<property name='env.JIRA_NUM' value='$jiraNum'/>" +
           "</properties>" +
           "</build>";
 
-  checkprocess "curl -v http://%TASK_RUNNER_USER%:%TASK_RUNNER_PWD%@10.30.0.229:80/httpAuth/app/rest/buildQueue " +
+
+  def runTcBuild = "curl -v http://%TASK_RUNNER_USER%:%TASK_RUNNER_PWD%@10.30.0.229:80/httpAuth/app/rest/buildQueue " +
       "-H \"Content-Type: application/xml\" " +
-      "-d \"${buildCommand}\"".execute()
+      "-d \"${buildCommand}\""
+
+  checkprocess runTcBuild.execute()
 }
 
 args.each {
@@ -156,7 +159,7 @@ args.each {
       //  Trailing slash is important for download; only need to pass JIRA number
       println "Triggering the build for: $k = $ATTACHMENT_URL/$v/"
 
-      runAllBuilds k
+      runAllTestBuilds k
     }
   }
   else if (parameters.length == 2 && parameters[0] == 'JIRA_NUM' && parameters[1] ==~ /\w+-\d+/) {
