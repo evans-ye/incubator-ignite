@@ -160,6 +160,7 @@ def runAllTestBuilds = { jiraNum ->
 
     OutputStream os = conn.getOutputStream()
     os.write(postData.getBytes())
+    os.flush()
     os.close()
   }
 }
