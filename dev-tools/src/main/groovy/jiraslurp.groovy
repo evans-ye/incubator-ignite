@@ -132,7 +132,7 @@ def JIRA_xml = { jiranum ->
 def runAllTestBuilds = { jiraNum ->
   ["Ignite_IgniteBasic",
    "Ignite_IgniteCache"].each {
-    println it
+    println "Triggering $it build for JIRA_NUM=$jiraNum"
 
     def buildCommand =
         "<build>" +
@@ -162,7 +162,7 @@ args.each {
     // For each ticket with new attachment, let's trigger remove build
     jirasAttached.each { k, v ->
       //  Trailing slash is important for download; only need to pass JIRA number
-      println "Triggering the build for: $k = $ATTACHMENT_URL/$v/"
+      println "Triggering the test builds for: $k = $ATTACHMENT_URL/$v/"
 
       runAllTestBuilds k
     }
