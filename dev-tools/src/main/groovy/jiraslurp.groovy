@@ -30,22 +30,27 @@ def readHistory = {
   final int MAX_HISTORY = 5000
 
   List validated_list = []
+
   def validated = new File(validated_filename)
+
   if (validated.exists()) {
     validated_list = validated.text.split('\n')
     validated.delete()
-  } else {
+  }
+  else {
     try {
-      validated_list =
-          new URL("http://204.14.53.152/$LAST_SUCCESSFUL_ARTIFACT").text.split('\n')
-    } catch (Exception e) {
+      validated_list = new URL("http://204.14.53.152/$LAST_SUCCESSFUL_ARTIFACT").text.split('\n')
+    }
+    catch (Exception e) {
       println e.getMessage()
     }
   }
+
   // Let's make sure the preserved history isn't too long
   if (validated_list.size > MAX_HISTORY) {
     validated_list = validated_list[validated_list.size-MAX_HISTORY..validated_list.size-1]
   }
+
   validated_list
 }
 
@@ -57,10 +62,13 @@ def getLatestAttachment = { jira ->
   def latestAttr = jira.attachments[0].attachment.list().sort {
     it.@id.toInteger()
   }.reverse()[0]
+
   String row = null
+
   if (latestAttr == null) {
     println "${jira.key} is in invalid state: patch is not available"
-  } else {
+  }
+  else {
     row = "${jira.key},${latestAttr.@id}"
   }
 }
@@ -69,27 +77,34 @@ def checkForAttachments = {
   def JIRA_FILTER =
       "https://issues.apache.org/jira/sr/jira.issueviews:searchrequest-xml/12330308/SearchRequest-12330308.xml?tempMax=100&field=key&field=attachments"
   def rss = new XmlSlurper().parse(JIRA_FILTER)
+
   List list = readHistory{}
 
   rss.channel.item.each { jira ->
     String row = getLatestAttachment (jira)
+
     if (row != null && !list.contains(row)) {
       def pair = row.split(',')
+
       jirasAttached.put(pair[0] as String, pair[1] as String)
+
       list.add(row)
     }
   }
 
   // Write everything back to persist the list
   def validated = new File(validated_filename)
+
   validated << list.join('\n')
 }
 
 def checkprocess = { process ->
   process.waitFor()
+
   if (process.exitValue() != 0) {
     println "Return code: " + process.exitValue()
     println "Errout:\n" + process.err.text
+
     assert process.exitValue() == 0 || process.exitValue() == 128
   }
 }
@@ -100,10 +115,13 @@ def create_gitbranch = {jira, attachementURL ->
   println "$ATTACHMENT_URL/$attachementURL/"
 
   def patchFile = new File("${jira}.patch")
+
   patchFile << new URL("$ATTACHMENT_URL/$attachementURL/").text
+
   checkprocess "git clone --depth 1 $GIT_REPO".execute()
-  checkprocess "git checkout -b sprint-2 origin/sprint-2".execute(null, new File('incubator-ignite'))
+  checkprocess "git checkout -b ignite-sprint-5 origin/ignite-sprint-5".execute(null, new File('incubator-ignite'))
   checkprocess "git am ../${patchFile.name}".execute(null, new File('incubator-ignite'))
+
   patchFile.delete()
 }
 
@@ -111,23 +129,45 @@ def JIRA_xml = { jiranum ->
   "https://issues.apache.org/jira/si/jira.issueviews:issue-xml/$jiranum/${jiranum}.xml"
 }
 
+def runAllBuilds = { jiraNum ->
+  def buildCommand =
+      "<build>" +
+          "<buildType id='Ignite_IgniteBasic'/>" +
+          "<properties>" +
+          "<property name='env.JIRA_NUM' value='$k'/>" +
+          "</properties>" +
+          "</build>";
+
+  checkprocess "curl -v http://%TASK_RUNNER_USER%:%TASK_RUNNER_PWD%@10.30.0.229:80/httpAuth/app/rest/buildQueue " +
+      "-H \"Content-Type: application/xml\" " +
+      "-d \"${buildCommand}\"".execute()
+}
+
 args.each {
   println it
+
   def parameters = it.split('=')
 
   if (parameters[0] == 'slurp') {
     checkForAttachments()
+
     // For each ticket with new attachment, let's trigger remove build
     jirasAttached.each { k, v ->
       //  Trailing slash is important for download; only need to pass JIRA number
       println "Triggering the build for: $k = $ATTACHMENT_URL/$v/"
+
+      runAllBuilds k
     }
-  } else if (parameters.length == 2 && parameters[0] == 'JIRA_NUM' && parameters[1] ==~ /\w+-\d+/) {
+  }
+  else if (parameters.length == 2 && parameters[0] == 'JIRA_NUM' && parameters[1] ==~ /\w+-\d+/) {
     // Extract JIRA rss from the and pass the ticket element into attachment extraction
     def rss = new XmlSlurper().parse(JIRA_xml(parameters[1]))
+
     String row = getLatestAttachment(rss.channel.item)
+
     if (row != null) {
       def pair = row.split(',')
+
       create_gitbranch(pair[0], pair[1])
     }
   }
