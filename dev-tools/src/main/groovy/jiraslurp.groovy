@@ -129,6 +129,8 @@ def JIRA_xml = { jiranum ->
   "https://issues.apache.org/jira/si/jira.issueviews:issue-xml/$jiranum/${jiranum}.xml"
 }
 
+def run
+
 def runAllTestBuilds = { jiraNum ->
   def user = System.getenv('TASK_RUNNER_USER')
   def pwd = System.getenv('TASK_RUNNER_PWD')
@@ -146,9 +148,19 @@ def runAllTestBuilds = { jiraNum ->
             "</build>";
 
 
-    def runTcBuild = "curl -v http://$user:$pwd@10.30.0.229:80/httpAuth/app/rest/buildQueue -H \"Content-Type: application/xml\" -d \"${buildCommand}\""
+    String postData = URLEncoder.encode(buildCommand, "UTF-8");
 
-    checkprocess runTcBuild.execute()
+    URL url = new URL("http://$user:$pwd@10.30.0.229:80/httpAuth/app/rest/buildQueue");
+    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+    conn.setDoOutput(true);
+    conn.setRequestMethod("POST");
+//    conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+    conn.setRequestProperty("Content-Type", "application/xml");
+    conn.setRequestProperty("Content-Length", String.valueOf(postData.length()));
+
+    OutputStream os = conn.getOutputStream()
+    os.write(postData.getBytes())
+    os.close()
   }
 }
 
