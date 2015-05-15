@@ -130,7 +130,8 @@ def JIRA_xml = { jiranum ->
 }
 
 def runAllTestBuilds = { jiraNum ->
-  [Ignite_IgniteBasic, Ignite_IgniteCache].each {
+  ["Ignite_IgniteBasic",
+   "Ignite_IgniteCache"].each {
     println it
 
     def buildCommand =
