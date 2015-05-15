@@ -146,9 +146,7 @@ def runAllTestBuilds = { jiraNum ->
             "</build>";
 
 
-    def runTcBuild = "curl -v http://$user:$pwd@10.30.0.229:80/httpAuth/app/rest/buildQueue " +
-        "-H \"Content-Type: application/xml\" " +
-        "-d \"${buildCommand}\""
+    def runTcBuild = "curl -v http://$user:$pwd@10.30.0.229:80/httpAuth/app/rest/buildQueue -H \"Content-Type: application/xml\" -d \"${buildCommand}\""
 
     checkprocess runTcBuild.execute()
   }
