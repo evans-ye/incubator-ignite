@@ -130,11 +130,12 @@ def JIRA_xml = { jiranum ->
 }
 
 def runAllTestBuilds = { jiraNum ->
+  def user = System.getenv('TASK_RUNNER_USER')
+  def pwd = System.getenv('TASK_RUNNER_PWD')
+
   ["Ignite_IgniteBasic",
    "Ignite_IgniteCache"].each {
     println "Triggering $it build for JIRA_NUM=$jiraNum"
-    println System.getenv('TASK_RUNNER_USER')
-    println System.getenv('TASK_RUNNER_PWD')
 
     def buildCommand =
         "<build>" +
@@ -145,7 +146,7 @@ def runAllTestBuilds = { jiraNum ->
             "</build>";
 
 
-    def runTcBuild = "curl -v http://%env.TASK_RUNNER_USER%:%env.TASK_RUNNER_PWD%@10.30.0.229:80/httpAuth/app/rest/buildQueue " +
+    def runTcBuild = "curl -v http://$user:$pwd@10.30.0.229:80/httpAuth/app/rest/buildQueue " +
         "-H \"Content-Type: application/xml\" " +
         "-d \"${buildCommand}\""
 
