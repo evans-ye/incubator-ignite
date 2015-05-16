@@ -83,14 +83,15 @@ public class HadoopV2Context extends JobContextImpl implements MapContext, Reduc
 
             if (split == null)
                 return null;
-
             if (split instanceof HadoopFileBlock) {
                 HadoopFileBlock fileBlock = (HadoopFileBlock)split;
 
                 inputSplit = new FileSplit(new Path(fileBlock.file()), fileBlock.start(), fileBlock.length(), null);
             }
-            else if (split instanceof HadoopExternalSplit)
-                throw new UnsupportedOperationException(); // TODO
+            else if (split instanceof HadoopExternalSplit) {
+                HadoopExternalSplit externalSplit = (HadoopExternalSplit) split;
+                inputSplit = new FileSplit(null, 0, externalSplit.offset(), externalSplit.hosts());
+            }
             else if (split instanceof HadoopSplitWrapper)
                 inputSplit = (InputSplit) HadoopUtils.unwrapSplit((HadoopSplitWrapper) split);
             else
