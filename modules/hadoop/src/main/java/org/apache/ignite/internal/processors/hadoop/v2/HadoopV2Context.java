@@ -93,7 +93,7 @@ public class HadoopV2Context extends JobContextImpl implements MapContext, Reduc
                 try {
                     inputSplit = (InputSplit) ((HadoopV2TaskContext)ctx).getNativeSplit(split);
                 } catch (IgniteCheckedException e) {
-                    e.printStackTrace();
+                    throw e;
                 }
             else if (split instanceof HadoopSplitWrapper)
                 inputSplit = (InputSplit) HadoopUtils.unwrapSplit((HadoopSplitWrapper) split);
